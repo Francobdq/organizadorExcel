@@ -75,7 +75,6 @@ amarillo = pd.concat([sumarStringAColumna("",df.iloc[:,3],"payer_reference"),df.
 
 df = pd.concat([verde,azul,amarillo],axis=1)
 #print(df)
-
 df.to_excel(pathOUT, index = False)
 
 #Test
