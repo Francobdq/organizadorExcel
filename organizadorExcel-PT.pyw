@@ -2,10 +2,9 @@ from tkinter import filedialog
 from tkinter import *
 from functools import partial
 import os
-#import probarImportar
+import main
 
 
-global pathTXT
 global pathDATOS
 
 
@@ -19,7 +18,7 @@ se_puede_ejecutar = False
 def ejecutarPrograma():
     if(se_puede_ejecutar):
         print("Programa ejecutado correctamente")
-        #probarImportar.ejecutarCodigo(pathDATOS)
+        main.ejecutarCodigo(pathDATOS)
     else:
         print("No se ejecutó el programa")
 
