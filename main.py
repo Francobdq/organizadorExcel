@@ -1,78 +1,97 @@
 import os
-import pandas as pd
+import logging
+import principal
+from flask import Flask, flash, request, redirect, url_for, send_from_directory, render_template
+from werkzeug.utils import secure_filename
 
-pathOUT = os.getcwd() + '\\output.xlsx'
+from werkzeug.middleware.shared_data import SharedDataMiddleware
+#
+UPLOAD_FOLDER = ''
 
-
-def unionGYH(df):
-    G = df.iloc[:,6].values.tolist()
-    H = df.iloc[:,7].values.tolist()
-    GyH = df.iloc[:,6].values.tolist()
-
-    for i in range(len(G)):
-        G[i] = str(G[i])
-        H[i] = str(H[i])
-        while(len(G[i]) < 2):
-            G[i] = "0" + G[i]
-        while(len(H[i]) < 9):
-            H[i] = "0" + H[i]
-
-        GyH[i] = G[i] + H[i]
-
-    return pd.DataFrame(GyH, columns = ["comp"])
-    
-
-def llenarColumnaDeStr(df,cadena, titulo = "column"):
-    aux = df.iloc[:,0].values.tolist()
-    
-    for i in range(len(aux)):
-        aux[i] = cadena
-
-    return pd.DataFrame(aux, columns = [titulo])
+app = Flask(__name__)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 
-def sumarStringAColumna(cadena,dfColumna, titulo ="column"):
-    aux = dfColumna.values.tolist()
+logging.basicConfig(level=logging.DEBUG)
+logging.debug("Log habilitad!")
 
-    for i in range(len(aux)):
-        aux[i] = cadena + str(aux[i])
 
-    return pd.DataFrame(aux, columns = [titulo])
+def allowed_file(filename, ALLOWED_EXTENSIONS):
 
-def estandarizarCUIT(dfColumna):
-    payer_id_number = dfColumna.values.tolist()
-    payer_id_type = dfColumna.values.tolist()
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-    for i in range(len(payer_id_type)):
-        if(len(str(payer_id_type[i])) < 10):
-            payer_id_number[i] = ""
-            payer_id_type[i] = ""
-        else:
-            payer_id_type[i] = "CUIT_ARG"
+
+def manejoDeArchivo(archivo):
+    f = open(archivo, 'r')
+    f.seek(0)
+    logging.debug(f.readline())
+
+#Convierte una cadena de caracteres (los nombres de columnas excel) a su valor numerico
+def cadenaANum(cadena):
+    listNum = []
+
+    # recorro la cadena
+    for i in cadena:
+        # paso acada caracter a mayuscula y obtengo su ascii
+        test = i.upper()
+        ascci = ord(test)
+
+        if(ascci < 65 or ascci > 90):
+            print("Numero fuera de rango")
+            return
+        # del ascci lo paso a su valor numerico    
+        num = ascci - 65 + 1
+        # y lo añado a una lista
+        listNum.append(num)
+
+    # Luego paso esta lista (que se encuentra en base 26) a base 10
+    suma = 0
+    mul = pow(26,len(listNum)-1)
+    for i in listNum:
+
+        suma += i * mul
+        mul /= 26
+
+    # y finalmente devuelvo el valor final
+    return suma - 1
+
+
+@app.route('/', methods=['GET', 'POST'])
+def upload_file():
+    if request.method == 'POST':
+        # check if the post request has the file part
+        if 'excel' not in request.files:
+            flash('No file apart')
+            return redirect(request.url)
         
 
-    df_payer_id_type = pd.DataFrame(payer_id_type,columns=["payer_id_number"])
-    df_payer_id_number = pd.DataFrame(payer_id_number,columns=["payer_id_number"])
+        excel = request.files['excel']
+        # if user does not select file, browser also
+        # submit an empty part without filename
+            
+        if excel.filename == '':
+            flash('No selected file')
+            return redirect(request.url)
+        if excel and allowed_file(excel.filename, {"xlsx","xls"}):
+            filenameXLSX = "datos.xlsx"
+            pathXLSX = os.path.join(app.config['UPLOAD_FOLDER'], filenameXLSX)
+            excel.save(pathXLSX)
 
-    return pd.concat([df_payer_id_type,df_payer_id_number],axis=1)
+            #nombreHojaExcel = request.form['nomb-hoja']
+            principal.ejecutarCodigo(pathXLSX)
+            nombreOUT = 'output.xlsx'
+            return redirect(url_for('uploaded_file',
+                                    filename=nombreOUT))
 
 
 
-def ejecutarCodigo(excel):
-    df = pd.read_excel(excel)
+    return render_template("index.html")
 
 
-    GyH = unionGYH(df)
 
-    #En el documento final excel hay 3 secciones de colores, las separé en codigo simplemente por comodidad de lectura
-
-    verde = pd.concat([GyH,GyH,GyH,llenarColumnaDeStr(df,"","concept_description"),llenarColumnaDeStr(df,"ARS","moneda"),df.iloc[:,32], llenarColumnaDeStr(df,"","due_date"), llenarColumnaDeStr(df,"","last_due_date")], axis=1)
-    azul = pd.concat([llenarColumnaDeStr(df,"","return_url"),llenarColumnaDeStr(df,"","back_url"),llenarColumnaDeStr(df,"","notification_url"),llenarColumnaDeStr(df,"","rate"),llenarColumnaDeStr(df,"","charge_delay"),llenarColumnaDeStr(df,"","payment_number"),llenarColumnaDeStr(df,"","promotion_code"),llenarColumnaDeStr(df,"","meta_data")], axis=1)
-    amarillo = pd.concat([sumarStringAColumna("",df.iloc[:,3],"payer_reference"),df.iloc[:,17],llenarColumnaDeStr(df,"","payer_email"),llenarColumnaDeStr(df,"","payer_phone"),llenarColumnaDeStr(df,"ARG","payer_id_country"), estandarizarCUIT(df.iloc[:,15]),df.iloc[:,0],df.iloc[:,1]],axis=1)
-
-    df = pd.concat([verde,azul,amarillo],axis=1)
-    #print(df)
-    df.to_excel(pathOUT, index = False)
-
-#Test
-#cambio para git
+app.add_url_rule('/uploads/<filename>', 'uploaded_file',
+                 build_only=True)
+app.wsgi_app = SharedDataMiddleware(app.wsgi_app, {
+    '/uploads':  app.config['UPLOAD_FOLDER']
+})
